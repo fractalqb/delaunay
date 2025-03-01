@@ -2,24 +2,103 @@ package delaunay
 
 import (
 	"fmt"
+	"iter"
 	"math"
 )
 
-type Triangulation struct {
-	Points     []Point
-	ConvexHull []Point
-	Triangles  []int
-	Halfedges  []int
+type Triangulation[P Point] struct {
+	Points       []P
+	ConvexHull   []P
+	Triangles    []int
+	Halfedges    []int
+	NumTriangles int
 }
 
 // Triangulate returns a Delaunay triangulation of the provided points.
-func Triangulate(points []Point) (*Triangulation, error) {
+func Triangulate[S ~[]P, P Point](points S) (*Triangulation[P], error) {
 	t := newTriangulator(points)
 	err := t.triangulate()
-	return &Triangulation{points, t.convexHull(), t.triangles, t.halfedges}, err
+	return &Triangulation[P]{
+		points,
+		t.convexHull(),
+		t.triangles,
+		t.halfedges,
+		len(t.triangles) / 3,
+	}, err
 }
 
-func (t *Triangulation) area() float64 {
+// TriangleIdx returns the points of the triangle i, where 0 <= i <=
+// t.NumTriangles.
+func (t *Triangulation[P]) Triangle(i int) [3]P {
+	i *= 3
+	return [3]P{
+		t.Points[t.Triangles[i]],
+		t.Points[t.Triangles[i+1]],
+		t.Points[t.Triangles[i+2]],
+	}
+}
+
+// TriangleIdx returns the point indices of the triangle i, where 0 <= i <=
+// t.NumTriangles.
+func (t *Triangulation[P]) TriangleIdx(i int) [3]int {
+	i *= 3
+	return [3]int{t.Triangles[i], t.Triangles[i+1], t.Triangles[i+2]}
+}
+
+// Edges returns an iterator that yields each edge at most once. If hull is
+// false the outer "hull" edges are skipped. Otherwise all edges will be
+// iterated.
+func (t *Triangulation[P]) Edges(hull bool) iter.Seq2[P, P] {
+	return func(yield func(P, P) bool) {
+		for i, j := range t.EdgesIdx(hull) {
+			if !yield(t.Points[i], t.Points[j]) {
+				return
+			}
+		}
+	}
+}
+
+func (t *Triangulation[P]) EdgesIdx(hull bool) iter.Seq2[int, int] {
+	return func(yield func(int, int) bool) {
+		call := func(i, j int) bool {
+			if t.Halfedges[i] < 0 {
+				return true
+			}
+			p, q := t.Triangles[i], t.Triangles[j]
+			if p < q {
+				if !yield(p, q) {
+					return false
+				}
+			}
+			return true
+		}
+		if hull {
+			call = func(i, j int) bool {
+				p, q := t.Triangles[i], t.Triangles[j]
+				if p < q || t.Halfedges[i] < 0 {
+					if !yield(p, q) {
+						return false
+					}
+				}
+				return true
+			}
+		}
+		l := len(t.Triangles)
+		for i := 0; i < l; i += 3 {
+			if !call(i, i+1) {
+				return
+			}
+			if !call(i+1, i+2) {
+				return
+			}
+			if !call(i+2, i) {
+				return
+			}
+		}
+	}
+}
+
+func (t *Triangulation[P]) area() float64 {
 	var result float64
 	points := t.Points
 	ts := t.Triangles
@@ -35,7 +114,7 @@ func (t *Triangulation) area() float64 {
 // Validate performs several sanity checks on the Triangulation to check for
 // potential errors. Returns nil if no issues were found. You normally
 // shouldn't need to call this function but it can be useful for debugging.
-func (t *Triangulation) Validate() error {
+func (t *Triangulation[P]) Validate() error {
 	// verify halfedges
 	for i1, i2 := range t.Halfedges {
 		if i1 != -1 && t.Halfedges[i1] != i2 {

@@ -1,21 +1,27 @@
 package delaunay
 
-import "math"
+import (
+	"math"
+)
 
-type Point struct {
-	X, Y float64
+type Point interface {
+	X() float64
+	Y() float64
 }
 
-func (a Point) squaredDistance(b Point) float64 {
-	dx := a.X - b.X
-	dy := a.Y - b.Y
+func squaredDistance[P Point](a, b P) float64 {
+	dx := a.X() - b.X()
+	dy := a.Y() - b.Y()
 	return dx*dx + dy*dy
 }
 
-func (a Point) distance(b Point) float64 {
-	return math.Hypot(a.X-b.X, a.Y-b.Y)
+func distance[P Point](a, b P) float64 {
+	return math.Hypot(a.X()-b.X(), a.Y()-b.Y())
 }
 
-func (a Point) sub(b Point) Point {
-	return Point{a.X - b.X, a.Y - b.Y}
-}
+func sub[P Point](a, b P) pt { return pt{a.X() - b.X(), a.Y() - b.Y()} }
+
+type pt struct{ x, y float64 }
+
+func (p pt) X() float64 { return p.x }
+func (p pt) Y() float64 { return p.y }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/fogleman/delaunay"
+	"github.com/fogleman/delaunay/internal"
 	"github.com/fogleman/gg"
 	"github.com/fogleman/poissondisc"
 )
@@ -18,7 +19,7 @@ const (
 	N = 5000
 )
 
-func generatePoints() []delaunay.Point {
+func generatePoints() []internal.Point {
 	s := math.Sqrt(float64(N) * 1.618)
 	points := poissondisc.Sample(-s, -s, s, s, 1, 32, nil)
 	sort.Slice(points, func(i, j int) bool {
@@ -29,10 +30,10 @@ func generatePoints() []delaunay.Point {
 		return d1 < d2
 	})
 	points = points[:N]
-	result := make([]delaunay.Point, len(points))
+	result := make([]internal.Point, len(points))
 	for i, p := range points {
-		result[i].X = p.X
-		result[i].Y = p.Y
+		result[i].Px = p.X
+		result[i].Py = p.Y
 	}
 	return result
 }
@@ -52,18 +53,18 @@ func main() {
 	fmt.Println(len(triangulation.Triangles) / 3)
 
 	// compute point bounds for rendering
-	min := points[0]
-	max := points[0]
+	pmin := points[0]
+	pmax := points[0]
 	for _, p := range points {
-		min.X = math.Min(min.X, p.X)
-		min.Y = math.Min(min.Y, p.Y)
-		max.X = math.Max(max.X, p.X)
-		max.Y = math.Max(max.Y, p.Y)
+		pmin.Px = min(pmin.X(), p.X())
+		pmin.Py = min(pmin.Y(), p.Y())
+		pmax.Px = max(pmax.X(), p.X())
+		pmax.Py = max(pmax.Y(), p.Y())
 	}
 
-	size := delaunay.Point{max.X - min.X, max.Y - min.Y}
-	center := delaunay.Point{min.X + size.X/2, min.Y + size.Y/2}
-	scale := math.Min(W/size.X, H/size.Y) * 0.9
+	size := internal.Point{Px: pmax.X() - pmin.X(), Py: pmax.Y() - pmin.Y()}
+	center := internal.Point{Px: pmin.X() + size.X()/2, Py: pmin.Y() + size.Y()/2}
+	scale := math.Min(W/size.X(), H/size.Y()) * 0.9
 
 	// render points and edges
 	dc := gg.NewContext(W, H)
@@ -73,37 +74,24 @@ func main() {
 
 	dc.Translate(W/2, H/2)
 	dc.Scale(scale, scale)
-	dc.Translate(-center.X, -center.Y)
+	dc.Translate(-center.X(), -center.Y())
 
-	ts := triangulation.Triangles
-	hs := triangulation.Halfedges
-	for i, h := range hs {
-		if i > h {
-			p := points[ts[i]]
-			q := points[ts[nextHalfEdge(i)]]
-			dc.DrawLine(p.X, p.Y, q.X, q.Y)
-		}
+	for p, q := range triangulation.Edges(false) {
+		dc.DrawLine(p.X(), p.Y(), q.X(), q.Y())
 	}
 	dc.Stroke()
 
 	for _, p := range points {
-		dc.DrawPoint(p.X, p.Y, 5)
+		dc.DrawPoint(p.X(), p.Y(), 5)
 	}
 	dc.Fill()
 
 	for _, p := range triangulation.ConvexHull {
-		dc.LineTo(p.X, p.Y)
+		dc.LineTo(p.X(), p.Y())
 	}
 	dc.ClosePath()
 	dc.SetLineWidth(5)
 	dc.Stroke()
 
 	dc.SavePNG("out.png")
-}
-
-func nextHalfEdge(e int) int {
-	if e%3 == 2 {
-		return e - 2
-	}
-	return e + 1
 }
